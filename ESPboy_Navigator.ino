@@ -8,7 +8,7 @@
 #include "ESPboyLogo.h"
 #include <ESP_EEPROM.h>
 
-#define MCP23017address 0x20 //!!!! if your TFT and buttons does not work please check this address!!!! it could be from 0x20 to 0x27
+#define MCP23017address 0 //actually it's 0x20 but in <Adafruit_MCP23017.h> there is (x|0x20)
 #define GPSdatatimeout  2000
 #define LEDquantity     1
 
@@ -33,7 +33,7 @@
 
 double waypoint[5][2];
 uint8_t currentwaypoint = 0;
-uint8_t buttonspressed[6];
+uint8_t buttonspressed[8];
 uint8_t displaymode = 0;
 static uint8_t esp_eeprom_needsaving = 0;
 
@@ -93,10 +93,11 @@ void drawled(){
   if (gpsdata.coordage > GPSdatatimeout || !gpsdata.coordisvalid){
      tone (SOUNDpin, 600, 20);
      pixels.setPixelColor(0, pixels.Color(10,0,0));
-     pixels.show();}
+  }
   else{
      pixels.setPixelColor(0, pixels.Color(0,10,0));
-     pixels.show();}
+  }
+  pixels.show();
 }
 
 
@@ -377,9 +378,32 @@ static void smartDelay(unsigned long ms){
 
 
 void setup(){
-  WiFi.mode(WIFI_OFF); // to safe some battery power
   Serial.begin(115200); //serial init
   ss.begin(GPSBaud);   //software serial init
+  delay (100);
+  WiFi.mode(WIFI_OFF); // to safe some battery power
+
+//LED init
+  pinMode(LEDpin, OUTPUT);
+  pixels.begin();
+  delay (100);
+  pixels.setPixelColor(0, pixels.Color(0,0,0));
+  pixels.show();
+
+ //TFT init     
+  mcp.pinMode(csTFTMCP23017pin, OUTPUT);
+  mcp.digitalWrite(csTFTMCP23017pin, LOW);
+  tft.initR(INITR_144GREENTAB);
+  delay (100);
+  tft.setRotation(0);
+  tft.fillScreen(ST77XX_BLACK);
+
+//draw ESPboylogo  
+  tft.drawXBitmap(30, 24, ESPboyLogo, 68, 64, ST77XX_YELLOW);
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_YELLOW);
+  tft.setCursor(24,102);
+  tft.print ("GPS navigator");
     
 //global vars init  
   memset (waypoint, sizeof(waypoint), 0);
@@ -393,32 +417,10 @@ void setup(){
 
   //buttons on mcp23017 init
   mcp.begin(MCP23017address);
+  delay (100);
   for (int i=0;i<6;i++){  
      mcp.pinMode(i, INPUT);
      mcp.pullUp(i, HIGH);}
-  
-  //TFT init     
-  mcp.pinMode(csTFTMCP23017pin, OUTPUT);
-  mcp.digitalWrite(csTFTMCP23017pin, LOW);
-  tft.initR(INITR_144GREENTAB);
-  tft.setRotation(0);
-  tft.fillScreen(ST77XX_BLACK);
-
-//LED init
-  pinMode(LEDpin, OUTPUT);
-  pixels.begin();
-  pixels.setPixelColor(0, pixels.Color(0,0,0));
-  pixels.show();
-  
-//draw ESPboylogo  
-  delay(500);
-  tft.drawXBitmap(30, 24, ESPboyLogo, 68, 64, ST77XX_YELLOW);
-  tft.setTextSize(1);
-  tft.setTextColor(ST77XX_YELLOW);
-  tft.setCursor(0,102);
-  tft.print ("    GPS navigator");
-  delay(2500);
-  tft.fillScreen(ST77XX_BLACK);
   
 //BAT voltage measure init
   pinMode(A0, INPUT);
@@ -427,6 +429,10 @@ void setup(){
 //load last radio state from eeprom
   EEPROM.begin(sizeof (waypoint));
   esp_eeprom_load();
+
+//clear TFT
+  delay(2000);
+  tft.fillScreen(ST77XX_BLACK);
 }
 
 
