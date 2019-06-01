@@ -18,6 +18,8 @@
 #define RIGHT_BUTTON    3
 #define ACT_BUTTON      4
 #define ESC_BUTTON      5
+#define LFT_BUTTON      6
+#define RGT_BUTTON      7
 
 //SPI for LCD
 #define csTFTMCP23017pin  8 //chip select pin on the MCP23017 for TFT display
@@ -267,7 +269,7 @@ void esp_eeprom_load(){
 
 uint8_t checkbuttons(){
   uint8_t check = 0;
-  for (int i = 0; i < 6; i++){
+  for (int i = 0; i < 8; i++){
     if(!mcp.digitalRead(i)) { 
        buttonspressed[i] = 1; 
        check++;
@@ -390,6 +392,13 @@ void setup(){
   pixels.setPixelColor(0, pixels.Color(0,0,0));
   pixels.show();
 
+//buttons on mcp23017 init
+  mcp.begin(MCP23017address);
+  delay (100);
+  for (int i=0;i<8;i++){  
+     mcp.pinMode(i, INPUT);
+     mcp.pullUp(i, HIGH);}
+
  //TFT init     
   mcp.pinMode(csTFTMCP23017pin, OUTPUT);
   mcp.digitalWrite(csTFTMCP23017pin, LOW);
@@ -417,13 +426,6 @@ void setup(){
   delay(100);
   noTone(SOUNDpin);
 
-  //buttons on mcp23017 init
-  mcp.begin(MCP23017address);
-  delay (100);
-  for (int i=0;i<6;i++){  
-     mcp.pinMode(i, INPUT);
-     mcp.pullUp(i, HIGH);}
-  
 //BAT voltage measure init
   pinMode(A0, INPUT);
   pinMode (RXpin, INPUT_PULLUP);
