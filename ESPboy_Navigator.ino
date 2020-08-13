@@ -1,31 +1,36 @@
+/*
+ESPboy Navigator by RomanS
+
+ESPboy project page:
+https://hackaday.io/project/164830-espboy-beyond-the-games-platform-with-wifi
+*/
+
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_MCP23017.h>
 #include <TinyGPS++.h>
 #include <SoftwareSerial.h>
-#include <Adafruit_ST7735.h>
-#include <Adafruit_GFX.h> 
+#include <TFT_eSPI.h>
 #include <ESP8266WiFi.h>
 #include "ESPboyLogo.h"
 #include <ESP_EEPROM.h>
+#include "ESPboyOTA.h"
 
 #define MCP23017address 0 //actually it's 0x20 but in <Adafruit_MCP23017.h> there is (x|0x20)
 #define GPSdatatimeout  2000
 #define LEDquantity     1
 
-#define UP_BUTTON       1
-#define DOWN_BUTTON     2
-#define LEFT_BUTTON     0
-#define RIGHT_BUTTON    3
-#define ACT_BUTTON      4
-#define ESC_BUTTON      5
-#define LFT_BUTTON      6
-#define RGT_BUTTON      7
+#define PAD_LEFT        0x01
+#define PAD_UP          0x02
+#define PAD_DOWN        0x04
+#define PAD_RIGHT       0x08
+#define PAD_ACT         0x10
+#define PAD_ESC         0x20
+#define PAD_LFT         0x40
+#define PAD_RGT         0x80
+#define PAD_ANY         0xff
 
 //SPI for LCD
 #define csTFTMCP23017pin  8 //chip select pin on the MCP23017 for TFT display
-#define TFT_RST          -1
-#define TFT_DC            D8
-#define TFT_CS           -1
 
 #define LEDpin            D4
 #define SOUNDpin          D3
@@ -35,7 +40,6 @@
 
 double waypoint[5][2];
 uint8_t currentwaypoint = 0;
-uint8_t buttonspressed[8];
 uint8_t displaymode = 0;
 static uint8_t esp_eeprom_needsaving = 0;
 
@@ -43,9 +47,9 @@ static uint8_t esp_eeprom_needsaving = 0;
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(LEDquantity, LEDpin, NEO_GRB + NEO_KHZ800);
 TinyGPSPlus gps;
 SoftwareSerial ss(RXpin, TXpin);
-Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 Adafruit_MCP23017 mcp;
-
+TFT_eSPI tft = TFT_eSPI();
+ESPboyOTA* OTAobj = NULL;
 
 struct gpsstruct{
   double lat; //Latitude in degrees (double)
@@ -105,10 +109,10 @@ void drawled(){
 
 
 void drawtft(){
- tft.fillRect(0, 0, 128, 10, ST77XX_BLACK);
- tft.fillRect(0, 120, 128, 8, ST77XX_BLACK);
+ tft.fillRect(0, 0, 128, 10, TFT_BLACK);
+ tft.fillRect(0, 120, 128, 8, TFT_BLACK);
  tft.setTextSize(1);
-  tft.setTextColor(ST77XX_WHITE);
+  tft.setTextColor(TFT_WHITE);
   tft.setCursor(0, 0);
   if (gpsdata.datetimeisvalid){
     if (gpsdata.day<10) tft.print ("0");
@@ -137,11 +141,11 @@ void drawtft(){
 
    
  if (displaymode == 0){
-  tft.fillRect(0, 10, 128, 10, ST77XX_BLACK);
-  tft.fillRect(46, 20, 82, 100, ST77XX_BLACK);
+  tft.fillRect(0, 10, 128, 10, TFT_BLACK);
+  tft.fillRect(46, 20, 82, 100, TFT_BLACK);
   
   tft.setTextSize(1);
-  tft.setTextColor(ST77XX_MAGENTA);
+  tft.setTextColor(TFT_MAGENTA);
   tft.setCursor(0, 13);
   tft.print("Sat:");
   if(gpsdata.satisvalid) tft.print (gpsdata.sat);
@@ -153,7 +157,7 @@ void drawtft(){
 tft.print(currentwaypoint+1);
   
   tft.setTextSize(2);
-  tft.setTextColor(ST77XX_YELLOW);
+  tft.setTextColor(TFT_YELLOW);
   tft.setCursor(0, 27);
   tft.print("Lat ");
   if(gpsdata.coordisvalid) tft.print (gpsdata.lat);
@@ -164,7 +168,7 @@ tft.print(currentwaypoint+1);
   if(gpsdata.coordisvalid) tft.print (gpsdata.lng);
   else tft.print ("--");
   
-  tft.setTextColor(ST77XX_GREEN);  
+  tft.setTextColor(TFT_GREEN);  
   tft.setCursor(0, 63);
   tft.print("Spd ");
   if (gpsdata.speedisvalid) tft.print (round (gpsdata.speedkmph));
@@ -176,9 +180,9 @@ tft.print(currentwaypoint+1);
   else tft.print ("--");
   
   tft.setTextSize(1);
-  tft.setTextColor(ST77XX_RED);
+  tft.setTextColor(TFT_RED);
   tft.setCursor(0, 104);
-  tft.fillRect(0, 104, 128, 10, ST77XX_BLACK);
+  tft.fillRect(0, 104, 128, 10, TFT_BLACK);
   if (gpsdata.coordage > GPSdatatimeout) {
       tft.print(" GPS connection lost!");
   }
@@ -186,8 +190,8 @@ tft.print(currentwaypoint+1);
   else{
      tft.print(" ");
      for (int i = 0; i<5; i++){
-        if (i == currentwaypoint) tft.setTextColor(ST77XX_YELLOW); 
-        else tft.setTextColor(ST77XX_RED);
+        if (i == currentwaypoint) tft.setTextColor(TFT_YELLOW); 
+        else tft.setTextColor(TFT_RED);
         tft.print("[");
         tft.print(i+1);
         tft.print("] ");
@@ -197,9 +201,9 @@ tft.print(currentwaypoint+1);
 
  
  else{
-  tft.fillRect(0, 10, 128, 108, ST77XX_BLACK);
+  tft.fillRect(0, 10, 128, 108, TFT_BLACK);
   tft.setTextSize(2);
-  tft.setTextColor(ST77XX_YELLOW);
+  tft.setTextColor(TFT_YELLOW);
   tft.setCursor(0, 12);
   tft.print("Spd ");
   if (gpsdata.speedisvalid) tft.print ((uint8_t)round(gpsdata.speedkmph));
@@ -218,7 +222,7 @@ tft.print(currentwaypoint+1);
   else tft.print ("--");
   
   tft.setTextSize(2);
-  tft.setTextColor(ST77XX_MAGENTA);
+  tft.setTextColor(TFT_MAGENTA);
   tft.setCursor(0, 42);
   tft.print("Point ");
   tft.print(currentwaypoint+1);
@@ -231,7 +235,7 @@ tft.print(currentwaypoint+1);
   tft.print (waypoint[currentwaypoint][1]);
 
   tft.setTextSize(2);
-  tft.setTextColor(ST77XX_GREEN);
+  tft.setTextColor(TFT_GREEN);
   tft.setCursor(0, 69);
   tft.print ("Dst");
   double dist = round (gps.distanceBetween (gps.location.lat(), gps.location.lng(), waypoint[currentwaypoint][0], waypoint[currentwaypoint][1]));
@@ -246,10 +250,10 @@ tft.print(currentwaypoint+1);
   tft.print(gps.cardinal(cours));
   
   tft.setTextSize(1);
-  tft.setTextColor(ST77XX_RED);
+  tft.setTextColor(TFT_RED);
   tft.setCursor(0, 120);
   if (gpsdata.coordage > GPSdatatimeout) {
-    tft.fillRect(0, 120, 128, 8, ST77XX_BLACK);
+    tft.fillRect(0, 120, 128, 8, TFT_BLACK);
     tft.print(" GPS connection lost!");}
  }
 }
@@ -266,19 +270,7 @@ void esp_eeprom_load(){
 }
 
 
-
-uint8_t checkbuttons(){
-  uint8_t check = 0;
-  for (int i = 0; i < 8; i++){
-    if(!mcp.digitalRead(i)) { 
-       buttonspressed[i] = 1; 
-       check++;
-       smartDelay(10);} // to avoid i2c bus ovelflow during long button keeping pressed
-    else buttonspressed[i] = 0;
-  }
-  return (check);
-}
-
+uint8_t getKeys() { return (~mcp.readGPIOAB() & 255); }
 
 void fillgpsstruct(){
   gpsdata.lat = gps.location.lat(); // Latitude in degrees (double)
@@ -322,20 +314,20 @@ void fillgpsstruct(){
 }
   
 
-void runButtonsCommand(){
+void runButtonsCommand(uint8_t bt){
   tone (SOUNDpin, 800, 20);
   pixels.setPixelColor(0, pixels.Color(0,0,20));
   pixels.show();  
 if (displaymode == 0){ 
-  if ((buttonspressed[UP_BUTTON] || buttonspressed[RIGHT_BUTTON])  && currentwaypoint != 4) currentwaypoint++;
-  if ((buttonspressed[DOWN_BUTTON] || buttonspressed[LEFT_BUTTON]) && currentwaypoint != 0) currentwaypoint--; 
-  if (buttonspressed[ACT_BUTTON]){
+  if ((bt&PAD_UP || bt&PAD_RIGHT)  && currentwaypoint != 4) currentwaypoint++;
+  if ((bt&PAD_DOWN || bt&PAD_LEFT) && currentwaypoint != 0) currentwaypoint--; 
+  if (bt&PAD_ACT){
       esp_eeprom_needsaving++;
       waypoint[currentwaypoint][0] = gpsdata.lat;
       waypoint[currentwaypoint][1] = gpsdata.lng;
-      tft.fillRect(0, 104, 128, 10, ST77XX_BLACK);
+      tft.fillRect(0, 104, 128, 10, TFT_BLACK);
       tft.setTextSize(1);
-      tft.setTextColor(ST77XX_MAGENTA);
+      tft.setTextColor(TFT_MAGENTA);
       tft.setCursor(0, 104);
       tft.print ("  waypoint ");
       tft.print (currentwaypoint+1);
@@ -343,24 +335,24 @@ if (displaymode == 0){
       tone (SOUNDpin, 300, 100);
       smartDelay (2500);
    }
-   if (buttonspressed[ESC_BUTTON]) {
+   if (bt&PAD_ESC) {
      displaymode++;
      if (displaymode >1)  displaymode = 0;
-     tft.fillScreen(ST77XX_BLACK);}
+     tft.fillScreen(TFT_BLACK);}
 }
 
 else{
-   if (buttonspressed[ESC_BUTTON]) {
+   if (bt&PAD_ESC) {
      displaymode++;
      if (displaymode >1)  
      displaymode = 0; 
-     tft.fillScreen(ST77XX_BLACK);
+     tft.fillScreen(TFT_BLACK);
      }
-   if ((buttonspressed[UP_BUTTON] || buttonspressed[RIGHT_BUTTON])  && currentwaypoint != 4) currentwaypoint++;
-   if ((buttonspressed[DOWN_BUTTON] || buttonspressed[LEFT_BUTTON]) && currentwaypoint != 0) currentwaypoint--;    
+   if (((bt&PAD_UP) || (bt&PAD_RIGHT))  && currentwaypoint != 4) currentwaypoint++;
+   if (((bt&PAD_DOWN) || (bt&PAD_LEFT)) && currentwaypoint != 0) currentwaypoint--;    
 }
 
-  while (checkbuttons()) smartDelay(0);
+  while (!getKeys()) smartDelay(0);
   drawled();
   drawtft();
   delay(200); 
@@ -392,31 +384,30 @@ void setup(){
   pixels.setPixelColor(0, pixels.Color(0,0,0));
   pixels.show();
 
-//buttons on mcp23017 init
+//MCP23017 init
   mcp.begin(MCP23017address);
-  delay (100);
-  for (int i=0;i<8;i++){  
-     mcp.pinMode(i, INPUT);
-     mcp.pullUp(i, HIGH);}
+  delay(100);
+  for (int i = 0; i < 8; ++i) {
+    mcp.pinMode(i, INPUT);
+    mcp.pullUp(i, HIGH);}
 
  //TFT init     
   mcp.pinMode(csTFTMCP23017pin, OUTPUT);
   mcp.digitalWrite(csTFTMCP23017pin, LOW);
-  tft.initR(INITR_144GREENTAB);
-  delay (100);
+  tft.begin();
+  delay(100);
   tft.setRotation(0);
-  tft.fillScreen(ST77XX_BLACK);
+  tft.fillScreen(TFT_BLACK);
 
 //draw ESPboylogo  
-  tft.drawXBitmap(30, 24, ESPboyLogo, 68, 64, ST77XX_YELLOW);
+  tft.drawXBitmap(30, 24, ESPboyLogo, 68, 64, TFT_YELLOW);
   tft.setTextSize(1);
-  tft.setTextColor(ST77XX_YELLOW);
+  tft.setTextColor(TFT_YELLOW);
   tft.setCursor(24,102);
   tft.print ("GPS navigator");
     
 //global vars init  
   memset (waypoint, sizeof(waypoint), 0);
-  memset(buttonspressed, 0, sizeof(buttonspressed));
 
 //sound init and test
   pinMode(SOUNDpin, OUTPUT);
@@ -430,13 +421,16 @@ void setup(){
   pinMode(A0, INPUT);
   pinMode (RXpin, INPUT_PULLUP);
 
-//load last radio state from eeprom
+//check OTA
+ if (getKeys()&PAD_ACT || getKeys()&PAD_ESC) OTAobj = new ESPboyOTA(&tft, &mcp);
+
+//load last waypoint state from eeprom
   EEPROM.begin(sizeof (waypoint));
   esp_eeprom_load();
 
 //clear TFT
   delay(2000);
-  tft.fillScreen(ST77XX_BLACK);
+  tft.fillScreen(TFT_BLACK);
 }
 
 
@@ -449,7 +443,8 @@ void loop(){
    }
    while (ss.available()) gps.encode(ss.read());
    fillgpsstruct(); 
-   if (checkbuttons()) runButtonsCommand();
+   uint8_t bt=getKeys();
+   if (bt) runButtonsCommand(bt);
    if (millis() > count + 3000){
      count = millis();
      drawtft(); 
