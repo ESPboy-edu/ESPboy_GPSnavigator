@@ -13,7 +13,6 @@ https://hackaday.io/project/164830-espboy-beyond-the-games-platform-with-wifi
 #include <ESP8266WiFi.h>
 #include "ESPboyLogo.h"
 #include <ESP_EEPROM.h>
-#include "ESPboyOTA.h"
 
 #define MCP23017address 0 //actually it's 0x20 but in <Adafruit_MCP23017.h> there is (x|0x20)
 #define GPSdatatimeout  2000
@@ -49,7 +48,6 @@ TinyGPSPlus gps;
 SoftwareSerial ss(RXpin, TXpin);
 Adafruit_MCP23017 mcp;
 TFT_eSPI tft = TFT_eSPI();
-ESPboyOTA* OTAobj = NULL;
 
 struct gpsstruct{
   double lat; //Latitude in degrees (double)
@@ -420,9 +418,6 @@ void setup(){
 //BAT voltage measure init
   pinMode(A0, INPUT);
   pinMode (RXpin, INPUT_PULLUP);
-
-//check OTA
- if (getKeys()&PAD_ACT || getKeys()&PAD_ESC) OTAobj = new ESPboyOTA(&tft, &mcp);
 
 //load last waypoint state from eeprom
   EEPROM.begin(sizeof (waypoint));
