@@ -16,8 +16,8 @@ https://hackaday.io/project/164830-espboy-beyond-the-games-platform-with-wifi
 ADC_MODE(ADC_VCC);
 
 #define GPSdatatimeout  2000
-#define TXpin             D8
-#define RXpin             D6
+#define TXpin             -1
+#define RXpin             D8
 #define GPSBaud           9600
 
 double waypoint[5][2];
@@ -367,11 +367,10 @@ void smartDelay(unsigned long ms){
 void setup(){
   Serial.begin(115200); //serial init
   ss.begin(GPSBaud);   //software serial init
+  pinMode (RXpin, INPUT_PULLUP);
 
   //Init ESPboy
   myESPboy.begin("GPS Navigator");
-  
-  pinMode (RXpin, INPUT_PULLUP);
  
 //load last waypoint state from eeprom
   EEPROM.begin(10 + sizeof (waypoint));
